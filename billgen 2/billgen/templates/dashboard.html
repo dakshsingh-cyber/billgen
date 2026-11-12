@@ -1,0 +1,195 @@
+{% extends "base.html" %}
+{% macro field(name, label, type='number', required=False, default='', help='', col='col-md-4', step='any') %}
+<div class="{{ col }}">
+  <label class="form-label" for="{{ name }}">{{ label }}{% if required %} <span class="text-danger">*</span>{% endif %}</label>
+  <input class="form-control" id="{{ name }}" name="{{ name }}" type="{{ type }}" {% if type == 'number' %}step="{{ step }}" min="0"{% endif %}
+         value="{{ form.get(name, default) }}" {% if required %}required{% endif %}>
+  {% if help %}<div class="form-text">{{ help }}</div>{% endif %}
+</div>
+{% endmacro %}
+
+{% block content %}
+<div class="mb-3">
+  {% if paid %}
+    <span class="badge text-bg-success fs-6">Unlimited Active</span>
+    <span class="ms-2">Valid until {{ paid_until }} (IST)</span>
+  {% else %}
+    <span class="badge text-bg-primary fs-6">Free: {{ left }}/5 left today</span>
+    <span class="ms-2 text-muted small">Resets at midnight IST</span>
+  {% endif %}
+</div>
+
+{% if not paid and left == 0 %}
+<div class="alert alert-warning d-flex justify-content-between align-items-center">
+  <span>You have used your 5 free actions today. Upgrade to continue.</span>
+  <a class="btn btn-warning btn-sm" href="{{ url_for('pay') }}">Upgrade &#8377;499</a>
+</div>
+{% endif %}
+
+<ul class="nav nav-tabs mb-3">
+  <li class="nav-item"><button class="nav-link {{ 'active' if tab == 'up' }}" data-bs-toggle="tab" data-bs-target="#tab-up" type="button">UP Electricity Bill (PDF)</button></li>
+  <li class="nav-item"><button class="nav-link {{ 'active' if tab == 'bulk' }}" data-bs-toggle="tab" data-bs-target="#tab-bulk" type="button">Bulk Bills (Excel)</button></li>
+</ul>
+
+<div class="tab-content">
+<!-- ===================== UP electricity bill ===================== -->
+<div class="tab-pane fade {{ 'show active' if tab == 'up' }}" id="tab-up">
+{% if rows %}
+<div class="card shadow-sm mb-3 border-primary"><div class="card-body">
+  <h5 class="card-title">Bill preview</h5>
+  <p class="mb-2 small text-muted">Billing months: {{ result.billing_months }} &middot; Billed units: {{ result.billed_units|inr }} {{ result.billing_basis }}
+    (KWH diff {{ result.kwh_diff|inr }}, KVAH diff {{ result.kvah_diff|inr }}, solar {{ result.solar_export_units|inr }})</p>
+  <div class="table-responsive"><table class="table table-sm mb-2">
+    <thead class="table-light"><tr><th>Description</th><th class="text-end">Qty</th><th class="text-end">Rate</th><th class="text-end">Amount (Rs)</th></tr></thead>
+    <tbody>
+    {% for r in rows %}
+      <tr class="{{ 'table-primary fw-bold' if r.style == 'highlight' else 'fw-bold' if r.style == 'bold' }}">
+        <td>{{ r.description }}</td><td class="text-end">{{ r.qty }}</td><td class="text-end">{{ r.rate }}</td><td class="text-end">{{ r.amount }}</td></tr>
+    {% endfor %}
+    </tbody></table></div>
+  {% for n in result.notes %}<div class="alert alert-info py-1 small mb-1">{{ n }}</div>{% endfor %}
+  <button class="btn btn-primary mt-2" type="submit" form="bill-form" name="action" value="generate" {{ 'disabled' if (not paid and left == 0) }}>Download PDF</button>
+</div></div>
+{% endif %}
+
+<form id="bill-form" method="post" action="{{ url_for('generate') }}" class="card shadow-sm"><div class="card-body">
+  <h5 class="mb-3">1. Consumer</h5>
+  <div class="row g-3">
+    {{ field('consumer_name', 'Consumer name', 'text', True, col='col-md-6') }}
+    {{ field('account_id', 'Account ID', 'text', True, col='col-md-6') }}
+    {{ field('address', 'Address (optional)', 'text', col='col-md-8') }}
+    {{ field('mobile', 'Mobile (optional)', 'text', col='col-md-4') }}
+  </div>
+
+  <h5 class="mt-4 mb-3">2. Connection</h5>
+  <div class="row g-3">
+    <div class="col-md-6">
+      <label class="form-label" for="category_code">Category <span class="text-danger">*</span></label>
+      <select class="form-select" id="category_code" name="category_code" required>
+        <option value="">Choose a category...</option>
+        {% for c in categories %}
+        <option value="{{ c.code }}" data-basis="{{ c.billing_basis }}" data-fixed-unit="{{ c.fixed_charge_unit }}"
+                data-ed="{{ c.electricity_duty_pct|num }}" data-fl="{{ c.fl_charge_pct|num }}"
+                {{ 'selected' if form.get('category_code') == c.code }}>{{ c.code }} - {{ c.name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    {{ field('connection_load', 'Connection load', 'number', True, col='col-md-3') }}
+    <div class="col-md-3">
+      <label class="form-label" for="load_unit">Load unit</label>
+      <select class="form-select" id="load_unit" name="load_unit" {% if form.get('load_unit') %}data-touched="1"{% endif %}>
+        <option value="KW" {{ 'selected' if form.get('load_unit') == 'KW' }}>KW</option>
+        <option value="KVA" {{ 'selected' if form.get('load_unit') == 'KVA' }}>KVA</option>
+      </select>
+    </div>
+  </div>
+
+  <h5 class="mt-4 mb-3">3. Dates</h5>
+  <div class="row g-3">
+    {{ field('bill_date', 'Bill date', 'date', True, col='col-md-3') }}
+    {{ field('previous_read_date', 'Previous reading date', 'date', True, col='col-md-3') }}
+    {{ field('current_read_date', 'Current reading date', 'date', True, col='col-md-3') }}
+    {{ field('billing_months', 'Billing months', 'number', help='Blank = auto from the dates', col='col-md-3', step='1') }}
+  </div>
+
+  <h5 class="mt-4 mb-3">4. Meter readings</h5>
+  <div class="row g-3">
+    {{ field('previous_kwh', 'Previous KWH', default='0', col='col-md-3') }}
+    {{ field('current_kwh', 'Current KWH', default='0', col='col-md-3') }}
+    <div class="col-md-6 kvah-block"><div class="row g-3">
+      {{ field('previous_kvah', 'Previous KVAH', default='0', col='col-6') }}
+      {{ field('current_kvah', 'Current KVAH', default='0', col='col-6') }}
+    </div></div>
+    {{ field('solar_export_units', 'Solar export units', default='0', col='col-md-4', help='Net-metering units exported, same basis as billing') }}
+    <div class="col-md-8 d-flex align-items-end"><div class="alert alert-light border w-100 mb-0 py-2">Billed units: <strong id="billed-live">0</strong> <span id="basis-live" class="text-muted"></span></div></div>
+  </div>
+
+  <h5 class="mt-4 mb-1">5. Rates (optional overrides)</h5>
+  <p class="text-muted small">Leave blank to use the tariff on file.</p>
+  <div class="row g-3">
+    {{ field('energy_rate_override', 'Energy rate (Rs/unit)', col='col-md-3') }}
+    {{ field('fixed_rate_override', 'Fixed charge rate (per load unit/month)', col='col-md-3') }}
+    {{ field('fl_charge_pct_override', 'FL charge %', col='col-md-3') }}
+    {{ field('electricity_duty_pct_override', 'Electricity duty %', col='col-md-3') }}
+  </div>
+
+  <h5 class="mt-4 mb-3">6. Adjustments</h5>
+  <div class="row g-3">
+    {{ field('penalty_demand', 'Penalty demand', default='0', col='col-md-4') }}
+    {{ field('mcg', 'MCG (minimum monthly guarantee)', default='0', col='col-md-4') }}
+    {{ field('arrear', 'Arrear', default='0', col='col-md-4') }}
+    {{ field('lpsc', 'LPSC (late payment surcharge)', default='0', col='col-md-4') }}
+    {{ field('security_adjustment', 'Security adjustment (subtracted)', default='0', col='col-md-4') }}
+    {{ field('paid_amount', 'Amount already paid', default='0', col='col-md-4') }}
+  </div>
+
+  <div class="mt-4 d-flex flex-wrap gap-2">
+    <button class="btn btn-outline-primary" type="submit" name="action" value="preview">Preview bill</button>
+    <button class="btn btn-primary" type="submit" name="action" value="generate" {{ 'disabled' if (not paid and left == 0) }}>Generate PDF bill</button>
+  </div>
+  <p class="text-muted small mt-2 mb-0">Each PDF download counts as 1 action. Preview and history re-downloads are free.</p>
+</div></form>
+</div>
+
+<!-- ===================== Bulk Excel ===================== -->
+<div class="tab-pane fade {{ 'show active' if tab == 'bulk' }}" id="tab-bulk">
+<div class="card shadow-sm"><div class="card-body">
+  <h5 class="card-title">Generate bills</h5>
+  <form method="post" action="{{ url_for('generate_bulk') }}" enctype="multipart/form-data">
+    <div class="mb-3"><label class="form-label" for="usage">Usage sheet (.xlsx)</label>
+      <input class="form-control" type="file" id="usage" name="usage" accept=".xlsx" required></div>
+    <div class="mb-3"><label class="form-label" for="tariff">Tariff sheet (.xlsx)</label>
+      <input class="form-control" type="file" id="tariff" name="tariff" accept=".xlsx" required></div>
+    <button class="btn btn-primary" type="submit" {{ 'disabled' if (not paid and left == 0) }}>Generate and download bills</button>
+  </form>
+  <div class="text-muted small mt-3">
+    <p class="mb-1">Usage sheet columns: Customer_ID, Name, Units.</p>
+    <p class="mb-1">Tariff sheet must have two sheets named "Slabs" (From, To, Rate) and "Charges" (Name, Type, Value). Charge types: fixed, percent_of_energy, percent_of_subtotal.</p>
+    <p class="mb-0">Each generate counts as 1 free action. Max file size 5 MB per file.</p>
+  </div>
+</div></div>
+</div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+  var cat = document.getElementById('category_code');
+  if (!cat) return;
+  var ed = document.getElementById('electricity_duty_pct_override');
+  var fl = document.getElementById('fl_charge_pct_override');
+  var unit = document.getElementById('load_unit');
+  [ed, fl, unit].forEach(function (el) {
+    if (el.tagName === 'INPUT' && el.value !== '') el.dataset.touched = '1';   // value came from the server
+    el.addEventListener('input', function () { el.dataset.touched = '1'; });
+    el.addEventListener('change', function () { el.dataset.touched = '1'; });
+  });
+  var blocks = document.querySelectorAll('.kvah-block');
+  var ids = ['previous_kwh', 'current_kwh', 'previous_kvah', 'current_kvah', 'solar_export_units'];
+
+  function num(id) { var v = parseFloat(document.getElementById(id).value); return isNaN(v) ? 0 : v; }
+  function opt() { return cat.options[cat.selectedIndex]; }
+
+  function refresh(fromChange) {
+    var o = opt(), basis = (o && o.dataset.basis) || 'KWH';
+    blocks.forEach(function (b) { b.classList.toggle('d-none', basis !== 'KVAH'); });
+    if (o && o.value) {
+      if (!ed.dataset.touched) ed.value = o.dataset.ed;
+      if (!fl.dataset.touched) fl.value = o.dataset.fl;
+      if (!unit.dataset.touched) unit.value = (o.dataset.fixedUnit === 'KVA') ? 'KVA' : 'KW';
+    }
+    var gross = basis === 'KVAH' ? num('current_kvah') - num('previous_kvah') : num('current_kwh') - num('previous_kwh');
+    var billed = Math.max(0, gross - num('solar_export_units'));
+    document.getElementById('billed-live').textContent = billed.toLocaleString('en-IN', { maximumFractionDigits: 2 });
+    document.getElementById('basis-live').textContent = '(' + basis + ' basis)';
+  }
+  cat.addEventListener('change', function () {
+    // a new category re-fills ED/FL/unit unless the user typed their own values
+    refresh(true);
+  });
+  ids.forEach(function (id) { document.getElementById(id).addEventListener('input', function () { refresh(false); }); });
+  refresh(false);
+})();
+</script>
+{% endblock %}

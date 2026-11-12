@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h3 class="mb-0">Tariff categories</h3>
+  <a class="btn btn-primary" href="{{ url_for('admin_tariff_edit') }}">Add new category</a>
+</div>
+<div class="alert alert-warning small">Seeded rates were read from a photo of the tariff sheet. Verify them against the official tariff order before billing.</div>
+<div class="card shadow-sm"><div class="card-body table-responsive">
+<table class="table table-sm align-middle mb-0">
+  <thead><tr><th>Code</th><th>Name</th><th>Basis</th><th>ED %</th><th>FL %</th><th>Active</th><th></th></tr></thead>
+  <tbody>
+  {% for c in cats %}
+    <tr><td><strong>{{ c.code }}</strong></td><td>{{ c.name }}</td><td>{{ c.billing_basis }}</td>
+      <td>{{ c.electricity_duty_pct|num }}</td><td>{{ c.fl_charge_pct|num }}</td>
+      <td><form method="post" action="{{ url_for('admin_tariff_toggle', cat_id=c.id) }}">
+        <button class="btn btn-sm {{ 'btn-success' if c.is_active else 'btn-outline-secondary' }}">{{ 'Active' if c.is_active else 'Inactive' }}</button></form></td>
+      <td class="text-end"><a class="btn btn-outline-primary btn-sm" href="{{ url_for('admin_tariff_edit', cat_id=c.id) }}">Edit</a></td></tr>
+  {% endfor %}
+  </tbody>
+</table></div></div>
+{% endblock %}

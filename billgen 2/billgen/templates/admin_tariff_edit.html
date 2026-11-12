@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+{% block content %}
+<h3 class="mb-3">{{ 'New tariff category' if is_new else 'Edit ' ~ cat.code }}</h3>
+<div class="alert alert-warning"><strong>Notes:</strong> {{ cat.notes or 'None' }}</div>
+<form method="post" class="card shadow-sm"><div class="card-body">
+  <div class="row g-3">
+    <div class="col-md-4"><label class="form-label">Code</label><input class="form-control" name="code" value="{{ cat.code }}" required maxlength="40"></div>
+    <div class="col-md-8"><label class="form-label">Name</label><input class="form-control" name="name" value="{{ cat.name }}" required maxlength="200"></div>
+    <div class="col-12"><label class="form-label">Description</label><input class="form-control" name="description" value="{{ cat.description or '' }}"></div>
+    <div class="col-md-3"><label class="form-label">Billing basis</label>
+      <select class="form-select" name="billing_basis">{% for b in ['KWH','KVAH'] %}<option {{ 'selected' if cat.billing_basis==b }}>{{ b }}</option>{% endfor %}</select></div>
+    <div class="col-md-3"><label class="form-label">Fixed charge unit</label>
+      <select class="form-select" name="fixed_charge_unit">{% for u in ['KW','KVA','BHP','NONE'] %}<option {{ 'selected' if cat.fixed_charge_unit==u }}>{{ u }}</option>{% endfor %}</select></div>
+    <div class="col-md-3"><label class="form-label">Electricity duty %</label><input class="form-control" type="number" step="any" min="0" max="100" name="electricity_duty_pct" value="{{ cat.electricity_duty_pct|num or 0 }}" required></div>
+    <div class="col-md-3"><label class="form-label">FL charge %</label><input class="form-control" type="number" step="any" min="0" max="100" name="fl_charge_pct" value="{{ cat.fl_charge_pct|num or 0 }}" required></div>
+    <div class="col-md-4"><label class="form-label">Effective from</label><input class="form-control" type="date" name="effective_from" value="{{ cat.effective_from or '' }}"></div>
+    <div class="col-md-4 d-flex align-items-end"><div class="form-check"><input class="form-check-input" type="checkbox" name="is_active" id="is_active" {{ 'checked' if cat.is_active }}><label class="form-check-label" for="is_active">Active</label></div></div>
+    <div class="col-md-4 d-flex align-items-end"><div class="form-check"><input class="form-check-input" type="checkbox" name="tod_applicable" id="tod" {{ 'checked' if cat.tod_applicable }}><label class="form-check-label" for="tod">ToD applicable (flag only)</label></div></div>
+    <div class="col-12"><label class="form-label">Notes</label><textarea class="form-control" name="notes" rows="2">{{ cat.notes or '' }}</textarea></div>
+  </div>
+
+  <h5 class="mt-4">Energy slabs</h5>
+  <p class="text-muted small">Each row: units per month up to (leave blank on the last row for no limit) and the rate per unit. Lower bounds follow the previous row.</p>
+  <table class="table table-sm"><thead><tr><th>Up to (units/month)</th><th>Rate (Rs/unit)</th><th></th></tr></thead>
+    <tbody id="slabs">
+    {% for s in cat.slabs %}
+      <tr><td><input class="form-control form-control-sm" type="number" step="any" min="0" name="slab_to" value="{{ s.to_unit|num }}"></td>
+          <td><input class="form-control form-control-sm" type="number" step="any" min="0" name="slab_rate" value="{{ s.rate|num }}"></td>
+          <td><button type="button" class="btn btn-sm btn-outline-danger" onclick="this.closest('tr').remove()">Remove</button></td></tr>
+    {% endfor %}
+    </tbody></table>
+  <button type="button" class="btn btn-sm btn-outline-secondary" onclick="addSlab()">Add row</button>
+
+  <h5 class="mt-4">Fixed-charge tiers</h5>
+  <p class="text-muted small">Rate per load unit per month. A tier applies when min &le; load &lt; max (blank max = no limit).</p>
+  <table class="table table-sm"><thead><tr><th>Min load</th><th>Max load</th><th>Rate</th><th></th></tr></thead>
+    <tbody id="tiers">
+    {% for t in cat.fixed_tiers %}
+      <tr><td><input class="form-control form-control-sm" type="number" step="any" min="0" name="tier_min" value="{{ t.min_load|num }}"></td>
+          <td><input class="form-control form-control-sm" type="number" step="any" min="0" name="tier_max" value="{{ t.max_load|num }}"></td>
+          <td><input class="form-control form-control-sm" type="number" step="any" min="0" name="tier_rate" value="{{ t.rate|num }}"></td>
+          <td><button type="button" class="btn btn-sm btn-outline-danger" onclick="this.closest('tr').remove()">Remove</button></td></tr>
+    {% endfor %}
+    </tbody></table>
+  <button type="button" class="btn btn-sm btn-outline-secondary" onclick="addTier()">Add row</button>
+
+  <div class="mt-4 d-flex gap-2">
+    <button class="btn btn-primary" type="submit">Save</button>
+    <a class="btn btn-outline-secondary" href="{{ url_for('admin_tariff') }}">Cancel</a>
+  </div>
+</div></form>
+{% endblock %}
+{% block scripts %}
+<script>
+  var rm = '<td><button type="button" class="btn btn-sm btn-outline-danger" onclick="this.closest(\'tr\').remove()">Remove</button></td>';
+  function inp(name) { return '<td><input class="form-control form-control-sm" type="number" step="any" min="0" name="' + name + '"></td>'; }
+  function addSlab() { var tr = document.createElement('tr'); tr.innerHTML = inp('slab_to') + inp('slab_rate') + rm; document.getElementById('slabs').appendChild(tr); }
+  function addTier() { var tr = document.createElement('tr'); tr.innerHTML = inp('tier_min') + inp('tier_max') + inp('tier_rate') + rm; document.getElementById('tiers').appendChild(tr); }
+  if (!document.querySelector('#slabs tr')) addSlab();
+  if (!document.querySelector('#tiers tr')) addTier();
+</script>
+{% endblock %}
